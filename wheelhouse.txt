@@ -1,3 +1,4 @@
+simplejson
 cffi
 enum34
 ipaddress
