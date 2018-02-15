@@ -1,14 +1,7 @@
 import os
-import simplejson as json
 import subprocess
 from tempfile import NamedTemporaryFile
-
-from ansible.executor import playbook_executor
-from ansible.inventory import Inventory
-from ansible.parsing.dataloader import DataLoader
-from ansible.utils.display import Display
-from ansible.vars import VariableManager
-
+import json
 
 class Options(object):
     """
@@ -115,34 +108,25 @@ class Runner(object):
                  verbosity=0,
                  debug=False):
         self.debug = debug
-        self.options = Options()
-        self.options.tags = tags
-        self.options.private_key_file = private_key_file
-        self.options.verbosity = verbosity
-        self.options.connection = connection
-        self.options.become = True
-        self.options.become_method = 'sudo'
-        self.options.become_user = 'root'
-        self.options.extra_vars = ','.join(json.dumps(extra_vars))
-
-        # Set global verbosity
-        self.display = Display()
-        self.display.verbosity = self.options.verbosity
-
-        # Executor appears to have it's own
-        # verbosity object/setting as well
-        playbook_executor.verbosity = self.options.verbosity
+        self.private_key_file = private_key_file
+        self.become = True
+        self.become_method = 'sudo'
+        self.become_user = 'root'
+        self.become_pass = become_pass
+        self.connection = connection
+        self.tags = tags
+        self.extra_vars = extra_vars
+        self.playbooks = playbooks
+        self.hostnames = hostnames
+        if verbosity==0:
+            self.verbosity=''
+        else:
+            self.verbosity = '-' + verbosity*'v'
+        self.vault_pass = vault_pass
+    
 
         # Become Pass Needed if not logging in as user root
-        passwords = {'become_pass': become_pass}
-
-        # Gets data from YAML/JSON files
-        self.loader = DataLoader()
-        self.loader.set_vault_password(vault_pass)
-
-        # All the variables from all the various places
-        self.variable_manager = VariableManager()
-        self.variable_manager.extra_vars = extra_vars
+        passwords = {'become_pass': self.become_pass}
 
         # Parse hosts, I haven't found a good way to
         # pass hosts in without using a parsed template :(
@@ -156,15 +140,6 @@ class Runner(object):
         # Also Note: In py2.7, "isinstance(foo, str)" is valid for
         #            latin chars only. Luckily, hostnames are
         #            ascii-only, which overlaps latin charset
-        # if isinstance(hostnames, str):
-        # hostnames = {"customers": {"hosts": [hostnames]}}
-
-        # Set inventory, using most of above objects
-        self.inventory = Inventory(
-            loader=self.loader,
-            variable_manager=self.variable_manager,
-            host_list=self.hosts.name)
-        self.variable_manager.set_inventory(self.inventory)
 
         # Playbook to run. Assumes it is
         # local and relative to this python file
@@ -172,36 +147,40 @@ class Runner(object):
         dirname = os.path.dirname(__file__) or '.'
         pb_rel_dir = '../../../playbooks'
         playbook_path = os.path.join(dirname, pb_rel_dir)
-        self.options.module_path = os.path.join(playbook_path, 'library')
+        self.module_path = os.path.join(playbook_path, 'library')
 
         # os.environ['ANSIBLE_CONFIG'] = os.path.abspath(os.path.dirname(__file__))
-        pbs = [os.path.join(playbook_path, pb) for pb in playbooks]
+        pbs = [os.path.join(playbook_path, pb) for pb in self.playbooks]
 
-        # Setup playbook executor, but don't run until run() called
-        self.pbex = playbook_executor.PlaybookExecutor(
-            playbooks=pbs,
-            inventory=self.inventory,
-            variable_manager=self.variable_manager,
-            loader=self.loader,
-            options=self.options,
-            passwords=passwords)
 
+        # TODO: so here we construct a CLI line.
+        # For whatever reason, api is not taking account for `tags`!!
+        self.callme = [
+            'ansible-playbook',
+            '-i',
+            self.hosts.name,
+            ','.join(pbs),
+            '-c',
+            self.connection,
+            self.verbosity 
+        ]
+        if self.tags:
+            self.callme += ['--tags', tags]
+        if self.extra_vars:
+            self.extra_vars_file = os.path.join(os.path.expanduser('~'), "extra_vars.json") 
+            with open(self.extra_vars_file, "wt") as fp:
+                json.dump(extra_vars, fp)
+            self.callme += ['--extra-vars', '"@%s"' % (self.extra_vars_file)]
+        if self.module_path:
+            self.callme += ['--module-path',self.module_path]
 
     def run(self):
-        # Results of PlaybookExecutor
+        if self.debug:
+            print("ansbile cmd: ", ' '.join(self.callme))
 
-        self.pbex.run()
-        stats = self.pbex._tqm._stats
-
-        # # Test if success for record_logs
-        run_success = True
-        hosts = sorted(stats.processed.keys())
-        for h in hosts:
-            t = stats.summarize(h)
-            if t['unreachable'] > 0 or t['failures'] > 0:
-                run_success = False
-
-        # # Remove created temporary files
+        return_code = subprocess.call(' '.join(self.callme), shell=True)
+        #os.remove(self.extra_vars_file)
         os.remove(self.hosts.name)
+        return True if return_code == 0 else False
 
-        return run_success, stats
+
