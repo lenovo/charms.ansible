@@ -55,7 +55,7 @@ class Runner(object):
         if self.extra_vars:
             self.extra_vars_file = os.path.join(os.getenv('HOME'), "extra_vars.json")
             with open(self.extra_vars_file, "wt") as fp:
-                json.dump(extra_vars, fp)
+                json.dump(self.extra_vars, fp)
             self.callme += ['--extra-vars', ' "@%s"' % (self.extra_vars_file)]
             # evars = json.dumps(self.extra_vars)
             # self.callme += ['--extra-vars', "'%s'" %(evars)]
