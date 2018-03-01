@@ -6,7 +6,8 @@ class Runner(object):
 
     def __init__(self,
                  playbooks,
-                 tags,  # must have                 extra_vars,
+                 tags,  # must have                 
+                 extra_vars,
                  hostnames='127.0.0.1',
                  connection='local',  # smart|ssh|local
                  private_key_file='',
