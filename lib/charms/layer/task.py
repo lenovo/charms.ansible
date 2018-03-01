@@ -6,8 +6,7 @@ class Runner(object):
 
     def __init__(self,
                  playbooks,
-                 tags,  # must have
-                 extra_vars,
+                 tags,  # must have                 extra_vars,
                  hostnames='127.0.0.1',
                  connection='local',  # smart|ssh|local
                  private_key_file='',
@@ -54,10 +53,14 @@ class Runner(object):
         if self.tags:
             self.callme += ['--tags', tags]
         if self.extra_vars:
-            evars = json.dumps(self.extra_vars)
-            self.callme += ['--extra-vars', "'%s'" %(evars)]
-        if self.module_path:
-            self.callme += ['--module-path',self.module_path]
+            self.extra_vars_file = os.path.join(os.getenv('HOME'), "extra_vars.json")
+            with open(self.extra_vars_file, "wt") as fp:
+                json.dump(extra_vars, fp)
+            self.callme += ['--extra-vars', ' "@%s"' % (self.extra_vars_file)]
+            # evars = json.dumps(self.extra_vars)
+            # self.callme += ['--extra-vars', "'%s'" %(evars)]
+        # if self.module_path:
+        #     self.callme += ['--module-path',self.module_path]
 
     def run(self):
         if self.debug:
